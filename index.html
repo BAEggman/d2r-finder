@@ -472,7 +472,7 @@ $("#runOcr").addEventListener("click",async()=>{
     }
     $("#ocrText").value=(out.text||"").trim();
     $("#ocrText").hidden=false; $("#rematch").hidden=false;
-    matchFromAI(out.names||[], out.text||"");
+    matchFromAI(out.names||[], out.text||"", out.rarity||"");
   }catch(err){
     console.error(err);
     setStatus("인식에 실패했어요. 네트워크를 확인하거나, 이름 검색 탭을 이용해 주세요.");
@@ -483,7 +483,8 @@ $("#runOcr").addEventListener("click",async()=>{
 $("#rematch").addEventListener("click",()=>matchFromText($("#ocrText").value));
 
 /* Gemini가 알려준 영문명을 DB와 대조하고, 못 찾으면 인식된 글자로 보완 */
-function matchFromAI(names,text){
+const RARITY_KO={rare:"레어(노란 이름)",magic:"매직(파란 이름)",crafted:"크래프트",normal:"일반"};
+function matchFromAI(names,text,rarity){
   const agg=new Map();
   for(const n of names){
     const conf=Math.max(.4,Math.min(1,n.confidence||.5));
@@ -496,7 +497,12 @@ function matchFromAI(names,text){
   const list=[...agg.entries()].map(([it,s])=>[s,it])
     .sort((a,b)=>b[0]-a[0]).slice(0,8);
   renderInto($("#ocrResults"),list,true,"");
-  setStatus(list.length>1 ? "가장 비슷한 아이템이에요. 맞는 것을 선택해 주세요." : "이 아이템으로 보여요.");
+  /* 레어·매직·크래프트는 고유 이름이 없어서 베이스 아이템으로 연결됩니다 */
+  if(RARITY_KO[rarity]){
+    setStatus(RARITY_KO[rarity]+" 아이템이라 고유 이름이 없어요. 베이스 아이템 매물 페이지로 연결해 드립니다 — 옵션이 비슷한 매물은 직접 골라보세요.");
+  }else{
+    setStatus(list.length>1 ? "가장 비슷한 아이템이에요. 맞는 것을 선택해 주세요." : "이 아이템으로 보여요.");
+  }
 }
 
 function matchFromText(text){
