@@ -519,7 +519,8 @@ function matchFromText(text){
 /* ══ in-page prices via Cloudflare Worker proxy ══ */
 let curItem=null;
 const WKEY="d2rWorkerUrl";
-const workerBase=()=> (localStorage.getItem(WKEY)||"").trim().replace(/\/+$/,"");
+const DEFAULT_WORKER="https://d2r-proxy.entertain456842.workers.dev";
+const workerBase=()=> ((localStorage.getItem(WKEY)||DEFAULT_WORKER).trim().replace(/\/+$/,""));
 
 function setWorkerState(msg){
   const w=workerBase();
