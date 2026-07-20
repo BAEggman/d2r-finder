@@ -184,6 +184,20 @@ const PROMPT = [
   "- Never invent an item that does not exist in Diablo II: Resurrected.",
   "- `base` must always hold the English base type when one is visible, else \"\".",
   "",
+  "STEP 4 — Fill `stats` with the item's numeric affixes, translated to the",
+  "standard English wording used on trading sites. Use the affix text WITHOUT the",
+  "number, and put the number in `value`. Examples:",
+  "  악마술사 기술 +2          → { stat: \"to Necromancer Skill Levels\", value: 2 }",
+  "  시전 속도 +10%            → { stat: \"Faster Cast Rate\", value: 10 }",
+  "  적중당 생명력 6% 훔침     → { stat: \"Life Stolen Per Hit\", value: 6 }",
+  "  마나 +56                  → { stat: \"to Mana\", value: 56 }",
+  "  마나 재생 10%             → { stat: \"Regenerate Mana\", value: 10 }",
+  "  피해 1 감소               → { stat: \"Damage Reduced by\", value: 1 }",
+  "  모든 저항 +20             → { stat: \"to All Resistances\", value: 20 }",
+  "  모든 기술 +2              → { stat: \"to All Skills\", value: 2 }",
+  "Skip requirement lines (요구 레벨, 요구 힘), the base defense/damage line, and",
+  "any affix with no number. Keep at most 12 stats.",
+  "",
   "Also transcribe every readable line of text in the image into the `text` field,",
   "one line per line, keeping the original language.",
 ].join("\n");
@@ -207,9 +221,20 @@ const SCHEMA = {
         required: ["en", "confidence"],
       },
     },
+    stats: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          stat: { type: "STRING", description: "English affix wording, no number" },
+          value: { type: "NUMBER" },
+        },
+        required: ["stat", "value"],
+      },
+    },
     text: { type: "STRING", description: "All readable text in the image" },
   },
-  required: ["rarity", "base", "names", "text"],
+  required: ["rarity", "base", "names", "stats", "text"],
 };
 
 async function identify(request, env) {
@@ -304,12 +329,20 @@ async function identify(request, env) {
         names = [{ en: base, confidence: 0.9 }];
       }
 
+      const stats = Array.isArray(parsed.stats)
+        ? parsed.stats
+            .filter(s => s && typeof s.stat === "string" && s.stat.trim() && isFinite(s.value))
+            .slice(0, 12)
+            .map(s => ({ stat: s.stat.trim(), value: Number(s.value) }))
+        : [];
+
       return json({
         ok: true,
         model,
         rarity,
         base,
         names: names.map(n => ({ en: n.en.trim(), confidence: Number(n.confidence) || 0 })),
+        stats,
         text: typeof parsed.text === "string" ? parsed.text : "",
       });
     }

@@ -156,6 +156,32 @@ h1{
 .lst .meta{display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:5px; color:var(--dim); font-size:12px}
 .lst .props{display:flex; flex-wrap:wrap; gap:5px; margin-top:7px}
 .lst .props .chip{font-size:10.5px; padding:2px 8px; letter-spacing:0}
+.lst .props .chip.hit{border-color:var(--gold-deep); color:var(--gold)}
+.lst .head{display:flex; align-items:baseline; gap:8px}
+.lst .head .pg{flex:1; min-width:0}
+.sim{
+  flex:none; font-size:11.5px; font-weight:700; letter-spacing:.02em;
+  border:1px solid var(--line-2); border-radius:99px; padding:2px 9px; white-space:nowrap;
+}
+.sim.s3{color:var(--gold); border-color:var(--gold-deep)}
+.sim.s2{color:var(--rw)}
+.sim.s1{color:var(--dim)}
+
+/* ── option compare ── */
+.optbox{margin-top:12px; border:1px solid var(--line); border-radius:9px; background:var(--panel-2); padding:10px 12px}
+.optbox summary{cursor:pointer; color:var(--gold); font-size:13px; font-weight:500}
+.optbox summary:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+.opt-hint{color:var(--dim); font-size:12px; margin-top:8px}
+.opt-rows{display:flex; flex-direction:column; gap:5px; margin-top:9px}
+.opt-row{display:flex; align-items:center; gap:8px; font-size:12.5px}
+.opt-row label{flex:1; min-width:0; display:flex; align-items:center; gap:7px; cursor:pointer}
+.opt-row .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.opt-row input[type=number]{
+  flex:none; width:72px; padding:5px 7px; font:inherit; font-size:12.5px; text-align:right;
+  color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:6px;
+}
+.opt-foot{display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:11px; padding-top:9px; border-top:1px solid var(--line)}
+.opt-tog{display:flex; align-items:center; gap:7px; color:var(--dim); font-size:12.5px; cursor:pointer}
 .pr-foot{display:flex; justify-content:center; margin-top:12px}
 .spin{display:inline-block; width:12px; height:12px; border:2px solid var(--line-2); border-top-color:var(--gold); border-radius:50%; animation:spin .8s linear infinite; vertical-align:-2px; margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -249,6 +275,15 @@ a.plain{color:var(--gold-deep)}
       <span class="ledger-sub" id="pr-sub"></span>
     </div>
     <div id="pr-summary" class="pr-summary" hidden></div>
+    <details class="optbox" id="optbox" hidden>
+      <summary>옵션 비교 — 내 아이템과 얼마나 비슷한지</summary>
+      <p class="opt-hint">체크한 옵션으로 유사도를 계산합니다. 값은 직접 고칠 수 있어요.</p>
+      <div id="opt-rows" class="opt-rows"></div>
+      <div class="opt-foot">
+        <label class="opt-tog"><input type="checkbox" id="opt-sort" checked> 유사도순 정렬</label>
+        <label class="opt-tog"><input type="checkbox" id="opt-strict"> 체크한 옵션이 다 있는 매물만</label>
+      </div>
+    </details>
     <div id="pr-list" class="pr-list"></div>
     <p class="status" id="pr-status" aria-live="polite"></p>
     <div id="pr-err" class="err" hidden></div>
@@ -376,6 +411,7 @@ $("#copyEn").addEventListener("click",async()=>{
 /* ── name search tab ── */
 let deb;
 $("#q").addEventListener("input",e=>{
+  setMyStats([]);   /* 이름으로 새로 찾으면 이전 스크린샷의 옵션 비교는 버립니다 */
   clearTimeout(deb);
   deb=setTimeout(()=>{
     const v=e.target.value.trim();
@@ -407,6 +443,7 @@ function setProg(p){ $("#prog").hidden=false; $("#prog i").style.width=(p*100).t
 function handleFile(f){
   if(!f || !f.type.startsWith("image/")) return;
   shotFile=f;
+  setMyStats([]);   /* 새 스크린샷 → 이전 옵션 비교 초기화 */
   const el=$("#shot");
   if(el.src.startsWith("blob:")) URL.revokeObjectURL(el.src);
   el.src=URL.createObjectURL(f); el.hidden=false;
@@ -472,6 +509,7 @@ $("#runOcr").addEventListener("click",async()=>{
     }
     $("#ocrText").value=(out.text||"").trim();
     $("#ocrText").hidden=false; $("#rematch").hidden=false;
+    setMyStats(out.stats||[]);
     matchFromAI(out.names||[], out.text||"", out.rarity||"");
   }catch(err){
     console.error(err);
@@ -552,9 +590,9 @@ $("#saveWorker").addEventListener("click",()=>{
 });
 setWorkerState();
 
-const PR={id:null, en:"", page:0, count:0, mode:"item", freq:new Map(), busy:false};
+const PR={id:null, en:"", page:0, count:0, mode:"item", freq:new Map(), busy:false, items:[]};
 function resetLedger(){
-  PR.id=null; PR.en=""; PR.page=0; PR.count=0; PR.mode="item"; PR.freq=new Map(); PR.busy=false;
+  PR.id=null; PR.en=""; PR.page=0; PR.count=0; PR.mode="item"; PR.freq=new Map(); PR.busy=false; PR.items=[];
   $("#prices").hidden=true;
   $("#pr-list").textContent=""; $("#pr-status").textContent="";
   $("#pr-summary").hidden=true; $("#pr-err").hidden=true;
@@ -601,6 +639,85 @@ async function resolveItemId(en){
   if(!hit || hit.id==null) throw Object.assign(new Error("NOID"),{noid:true});
   return hit.id;
 }
+/* ══ 옵션 유사도 ══════════════════════════════════════════════
+   내 아이템 옵션과 매물 옵션을 짝지어, 값이 가까울수록 높은 점수를 줍니다.
+   위로 벗어나든 아래로 벗어나든 똑같이 감점합니다 (min/max 비율).      */
+const MY={stats:[]};
+
+/* "+{{value}} to Necromancer Skill Levels" → "necromancerskilllevels" */
+const statKey=s=>norm(String(s||"")
+  .replace(/\{\{\s*value\s*\}\}/gi,"")
+  .replace(/[+%]/g,"")
+  .replace(/^\s*to\s+/i,"")
+  .trim());
+
+function propNumber(p){
+  if(p.type==="number") return Number(p.number)||0;
+  if(p.type==="bool") return p.bool?1:0;
+  const n=parseFloat(p.string);
+  return isFinite(n)?n:0;
+}
+function listingStats(l){
+  const m=new Map();
+  for(const p of (l.properties||[])){
+    const k=statKey(p.property);
+    if(!k) continue;
+    const v=propNumber(p);
+    if(!m.has(k)||v>m.get(k)) m.set(k,v);
+  }
+  return m;
+}
+/* 표기가 조금 달라도 같은 옵션이면 잡아냅니다 */
+function lookupStat(map,key){
+  if(map.has(key)) return {k:key,v:map.get(key)};
+  let bk=null,bv=0,bs=0;
+  for(const [k,v] of map){ const s=dice(key,k); if(s>bs){bs=s;bk=k;bv=v;} }
+  return bs>=.82 ? {k:bk,v:bv} : null;
+}
+const activeStats=()=>MY.stats.filter(s=>s.on&&isFinite(s.value));
+
+function scoreListing(l){
+  const act=activeStats();
+  if(!act.length) return null;
+  const map=listingStats(l);
+  const hits=new Set();
+  let sum=0, have=0;
+  for(const s of act){
+    const f=lookupStat(map,statKey(s.stat));
+    if(!f){ continue; }
+    have++; hits.add(f.k);
+    const v=Math.abs(Number(s.value)), w=Math.abs(f.v);
+    sum += (v>0&&w>0) ? Math.min(v,w)/Math.max(v,w) : (v===0&&w===0?1:0);
+  }
+  return {score:sum/act.length, have, need:act.length, hits};
+}
+
+function setMyStats(stats){
+  MY.stats=(stats||[]).map(s=>({stat:s.stat,value:Number(s.value),on:true}));
+  buildOptPanel();
+  if(!$("#prices").hidden) renderList();
+}
+function buildOptPanel(){
+  const box=$("#opt-rows"); box.textContent="";
+  if(!MY.stats.length){ $("#optbox").hidden=true; return; }
+  $("#optbox").hidden=false;
+  for(const s of MY.stats){
+    const row=document.createElement("div"); row.className="opt-row";
+    const lab=document.createElement("label");
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=s.on;
+    cb.addEventListener("change",()=>{ s.on=cb.checked; renderList(); });
+    const nm=document.createElement("span"); nm.className="nm"; nm.textContent=s.stat;
+    lab.appendChild(cb); lab.appendChild(nm);
+    const num=document.createElement("input");
+    num.type="number"; num.step="any"; num.value=s.value;
+    num.addEventListener("input",()=>{ s.value=parseFloat(num.value); renderList(); });
+    row.appendChild(lab); row.appendChild(num);
+    box.appendChild(row);
+  }
+}
+$("#opt-sort").addEventListener("change",renderList);
+$("#opt-strict").addEventListener("change",renderList);
+
 function priceGroups(l){
   if(Array.isArray(l.prices)&&l.prices.length){
     const g=new Map();
@@ -614,7 +731,7 @@ function priceGroups(l){
   }
   return l.make_offer ? ["가격 제안 받는 중"] : [];
 }
-function listingRow(l){
+function listingRow(l,sc){
   const d=document.createElement("div");
   d.className="lst";
   const pg=document.createElement("div"); pg.className="pg";
@@ -624,7 +741,19 @@ function listingRow(l){
     if(i){ const or=document.createElement("span"); or.className="or"; or.textContent="또는"; pg.appendChild(or); }
     pg.appendChild(document.createTextNode(g));
   });
-  d.appendChild(pg);
+  if(sc){
+    const head=document.createElement("div"); head.className="head";
+    head.appendChild(pg);
+    const pct=Math.round(sc.score*100);
+    const b=document.createElement("span");
+    b.className="sim "+(pct>=75?"s3":pct>=45?"s2":"s1");
+    b.textContent="유사도 "+pct+"%";
+    b.title=`체크한 옵션 ${sc.need}개 중 ${sc.have}개 일치`;
+    head.appendChild(b);
+    d.appendChild(head);
+  }else{
+    d.appendChild(pg);
+  }
   const meta=document.createElement("div"); meta.className="meta";
   const bits=[];
   const iname=l.item&&l.item.name;
@@ -636,10 +765,16 @@ function listingRow(l){
   if(bits.length) d.appendChild(meta);
   if(Array.isArray(l.properties)&&l.properties.length){
     const pr=document.createElement("div"); pr.className="props";
-    for(const p of l.properties.slice(0,8)){
+    /* 유사도 비교 중이면 일치한 옵션을 앞으로 당겨 보여줍니다 */
+    let props=l.properties;
+    if(sc&&sc.hits.size){
+      props=[...props].sort((a,b)=>(sc.hits.has(statKey(b.property))?1:0)-(sc.hits.has(statKey(a.property))?1:0));
+    }
+    for(const p of props.slice(0,8)){
       let v = p.type==="string"?p.string : p.type==="number"?p.number : p.type==="bool"?(p.bool?"":null):null;
       if(v===null && p.type==="bool") continue;
       const c=document.createElement("span"); c.className="chip";
+      if(sc&&sc.hits.has(statKey(p.property))) c.classList.add("hit");
       c.textContent = p.property + (v===""||v==null ? "" : ": "+v);
       pr.appendChild(c);
     }
@@ -662,15 +797,39 @@ function showErr(e){
     $("#pr-raw").textContent=(e.url?("요청: "+e.url+"\n\n"):"")+(e.body||"");
   }
 }
-function renderSummary(){
+function renderSummary(shown,sorted){
   const box=$("#pr-summary");
   const top=[...PR.freq.entries()].filter(([g])=>g&&g!=="가격 제안 받는 중")
     .sort((a,b)=>b[1]-a[1]).slice(0,2).filter(([,n])=>n>=2);
-  if(PR.count>=3 && top.length){
+  if(shown>=3 && top.length){
     box.hidden=false;
     box.textContent="자주 보이는 호가: "+top.map(([g,n])=>`${g} (${n}건)`).join(" · ");
+  }else{
+    box.hidden=true;
   }
-  $("#pr-sub").textContent=PR.count?`${PR.count}개 표시 · 갱신순`:"";
+  const order=sorted?"유사도순":"갱신순";
+  const filtered=shown<PR.count ? ` (전체 ${PR.count}개 중)` : "";
+  $("#pr-sub").textContent=PR.count?`${shown}개 표시${filtered} · ${order}`:"";
+}
+
+/* 모은 매물을 유사도로 걸러 정렬해 다시 그립니다 */
+function renderList(){
+  const box=$("#pr-list"); box.textContent="";
+  const act=activeStats();
+  let rows=PR.items.map(l=>({l, s:act.length?scoreListing(l):null}));
+  if(act.length && $("#opt-strict").checked) rows=rows.filter(r=>r.s.have===r.s.need);
+  const sorted=Boolean(act.length && $("#opt-sort").checked);
+  if(sorted) rows.sort((a,b)=> b.s.score-a.s.score || b.s.have-a.s.have);
+  PR.freq=new Map();
+  for(const r of rows){
+    box.appendChild(listingRow(r.l,r.s));
+    const g=priceGroups(r.l)[0]||"";
+    PR.freq.set(g,(PR.freq.get(g)||0)+1);
+  }
+  renderSummary(rows.length,sorted);
+  if(act.length && !rows.length && PR.count){
+    $("#pr-status").textContent="체크한 옵션을 모두 가진 매물이 없어요. 옵션 체크를 줄이거나 ‘다 있는 매물만’을 꺼 보세요.";
+  }
 }
 async function loadPrices(reset){
   if(PR.busy) return;
@@ -704,24 +863,29 @@ async function loadPrices(reset){
     const q = PR.mode==="item"
       ? "item="+encodeURIComponent(PR.id)
       : "search="+encodeURIComponent(PR.en);
-    const data=await fetchJson(w+"/api/diablo2resurrected/listings?"+q+"&selling=true&auction=false&page="+PR.page);
-    const arr=findArray(data,["listings"])||[];
-    if(PR.page===0 && arr.length){
-      $("#pr-debug").hidden=false;
-      $("#pr-raw").textContent=JSON.stringify(arr[0],null,1).slice(0,2000);
+    /* 옵션 비교 중이면 비교할 표본이 있어야 하니 여러 장을 한 번에 모읍니다 */
+    const pages = (reset && activeStats().length) ? 5 : 1;
+    let got=0, last=1;
+    for(let i=0;i<pages && last;i++){
+      if(i) $("#pr-status").innerHTML=`<span class="spin"></span>비교할 매물을 모으는 중… ${PR.count}개`;
+      const data=await fetchJson(w+"/api/diablo2resurrected/listings?"+q+"&selling=true&auction=false&page="+PR.page);
+      const arr=findArray(data,["listings"])||[];
+      if(PR.page===0 && arr.length){
+        $("#pr-debug").hidden=false;
+        $("#pr-raw").textContent=JSON.stringify(arr[0],null,1).slice(0,2000);
+      }
+      PR.items.push(...arr);
+      PR.count+=arr.length; PR.page++;
+      got+=arr.length; last=arr.length;
     }
-    for(const l of arr){
-      $("#pr-list").appendChild(listingRow(l));
-      const g=priceGroups(l)[0]||"";
-      PR.freq.set(g,(PR.freq.get(g)||0)+1);
-    }
-    PR.count+=arr.length; PR.page++;
-    renderSummary();
-    if(arr.length===0){
-      $("#pr-status").textContent = PR.count? "매물이 더 없습니다." : "지금 등록된 매물이 없어요. ‘Traderie에서 보기’로 완료된 거래를 참고해 보세요.";
+    $("#pr-status").textContent="";
+    renderList();
+    if(got===0){
+      if(!$("#pr-status").textContent){
+        $("#pr-status").textContent = PR.count? "매물이 더 없습니다." : "지금 등록된 매물이 없어요. ‘Traderie에서 보기’로 완료된 거래를 참고해 보세요.";
+      }
       $("#pr-more").hidden=true;
     }else{
-      $("#pr-status").textContent="";
       $("#pr-more").hidden=false;
     }
   }catch(e){
