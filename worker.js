@@ -31,7 +31,15 @@ const UPSTREAM = "https://traderie.com";
 
 // Gemini 무료 티어에서 쓸 수 있는 모델을 앞에서부터 시도합니다.
 // 앞 모델이 없으면 자동으로 다음 것으로 넘어갑니다.
-const MODELS = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
+const MODELS = [
+  "gemini-flash-lite-latest",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash-lite",
+  "gemini-2.0-flash-lite",
+  "gemini-flash-latest",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+];
 
 // 업로드 이미지 상한 (base64 기준 6MB → 원본 약 4.5MB)
 const MAX_IMAGE_CHARS = 6 * 1024 * 1024;
@@ -229,11 +237,15 @@ async function identify(request, env) {
 
   let lastStatus = 0, lastDetail = "";
   const attempts = [];
-  for (const model of models) {
+  // 모델 × API 버전 조합을 순서대로 시도합니다.
+  const combos = [];
+  for (const model of models) for (const v of ["v1beta", "v1"]) combos.push([model, v]);
+
+  for (const [model, ver] of combos) {
     let r;
     try {
       r = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/" +
+        "https://generativelanguage.googleapis.com/" + ver + "/models/" +
           encodeURIComponent(model) + ":generateContent",
         {
           method: "POST",
@@ -243,7 +255,7 @@ async function identify(request, env) {
       );
     } catch (e) {
       lastStatus = 502; lastDetail = String(e);
-      attempts.push({ model, status: "fetch_failed" });
+      attempts.push({ model, ver, status: "fetch_failed" });
       continue;
     }
 
@@ -270,7 +282,9 @@ async function identify(request, env) {
 
     lastStatus = r.status;
     lastDetail = (await r.text().catch(() => "")).slice(0, 300);
-    attempts.push({ model, status: r.status });
+    let reason = "";
+    try { reason = (JSON.parse(lastDetail).error || {}).message || ""; } catch (e) { reason = lastDetail; }
+    attempts.push({ model, ver, status: r.status, reason: reason.slice(0, 160) });
 
     // 모델이 없거나(404/400) 그 모델 할당량이 찼으면(429) 다음 후보로 넘어갑니다.
     // 그 외(키 오류 등)는 다른 모델을 시도해도 똑같으므로 즉시 중단.
