@@ -62,6 +62,25 @@ export default {
       }));
     }
 
+    // ── 진단: 이 키로 쓸 수 있는 모델 목록 ────────────────────
+    if (url.pathname === "/ai/models") {
+      if (!originAllowed(request)) return withCors(json({ error: "origin not allowed" }, 403));
+      const key = env && env.GEMINI_API_KEY;
+      if (!key) return withCors(json({ error: "no_api_key" }, 503));
+      const r = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+        { headers: { "x-goog-api-key": key } }
+      );
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j) {
+        return withCors(json({ error: "upstream_error", status: r.status }, 502));
+      }
+      const names = (j.models || [])
+        .filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
+        .map(m => (m.name || "").replace(/^models\//, ""));
+      return withCors(json({ ok: true, count: names.length, models: names }));
+    }
+
     // ── 스크린샷 인식 ─────────────────────────────────────────
     if (url.pathname === "/ai/identify") {
       if (request.method !== "POST") {
@@ -209,6 +228,7 @@ async function identify(request, env) {
   for (const m of MODELS) if (!models.includes(m)) models.push(m);
 
   let lastStatus = 0, lastDetail = "";
+  const attempts = [];
   for (const model of models) {
     let r;
     try {
@@ -223,6 +243,7 @@ async function identify(request, env) {
       );
     } catch (e) {
       lastStatus = 502; lastDetail = String(e);
+      attempts.push({ model, status: "fetch_failed" });
       continue;
     }
 
@@ -249,15 +270,18 @@ async function identify(request, env) {
 
     lastStatus = r.status;
     lastDetail = (await r.text().catch(() => "")).slice(0, 300);
+    attempts.push({ model, status: r.status });
 
-    // 404/400 = 그 모델이 없음 → 다음 후보로. 그 외에는 즉시 중단.
-    if (r.status !== 404 && r.status !== 400) break;
+    // 모델이 없거나(404/400) 그 모델 할당량이 찼으면(429) 다음 후보로 넘어갑니다.
+    // 그 외(키 오류 등)는 다른 모델을 시도해도 똑같으므로 즉시 중단.
+    if (r.status !== 404 && r.status !== 400 && r.status !== 429) break;
   }
 
   if (lastStatus === 429) {
     return json({
       error: "rate_limited",
       message: "Gemini 무료 할당량을 다 썼습니다. 잠시 후(또는 내일) 다시 시도해 주세요.",
+      attempts,
     }, 429);
   }
   if (lastStatus === 401 || lastStatus === 403) {
@@ -271,6 +295,7 @@ async function identify(request, env) {
     message: "인식 서버에 문제가 있습니다. 잠시 후 다시 시도해 주세요.",
     status: lastStatus,
     detail: lastDetail,
+    attempts,
   }, 502);
 }
 
