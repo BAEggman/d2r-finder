@@ -667,12 +667,19 @@ function listingStats(l){
   }
   return m;
 }
-/* 표기가 조금 달라도 같은 옵션이면 잡아냅니다 */
+/* 표기가 조금 달라도 같은 옵션이면 잡아냅니다.
+   단 "Damage Reduced by"와 "Magic Damage Reduced by"처럼 앞에 단어가 더 붙어
+   뜻이 달라지는 경우는 길이 비율로 걸러냅니다. */
 function lookupStat(map,key){
   if(map.has(key)) return {k:key,v:map.get(key)};
   let bk=null,bv=0,bs=0;
-  for(const [k,v] of map){ const s=dice(key,k); if(s>bs){bs=s;bk=k;bv=v;} }
-  return bs>=.82 ? {k:bk,v:bv} : null;
+  for(const [k,v] of map){
+    const ratio=Math.min(key.length,k.length)/Math.max(key.length,k.length);
+    if(ratio<.8) continue;
+    const s=dice(key,k);
+    if(s>bs){ bs=s; bk=k; bv=v; }
+  }
+  return bs>=.88 ? {k:bk,v:bv} : null;
 }
 const activeStats=()=>MY.stats.filter(s=>s.on&&isFinite(s.value));
 
@@ -699,8 +706,9 @@ function setMyStats(stats){
 }
 function buildOptPanel(){
   const box=$("#opt-rows"); box.textContent="";
-  if(!MY.stats.length){ $("#optbox").hidden=true; return; }
+  if(!MY.stats.length){ $("#optbox").hidden=true; $("#optbox").open=false; return; }
   $("#optbox").hidden=false;
+  $("#optbox").open=true;   /* 인식된 옵션은 바로 보이게 */
   for(const s of MY.stats){
     const row=document.createElement("div"); row.className="opt-row";
     const lab=document.createElement("label");
