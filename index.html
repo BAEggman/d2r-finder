@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D2R 트레더리 파인더 — 한글로 찾는 Traderie 매물</title>
+<meta name="description" content="디아블로 2 레저렉션 아이템을 한글 이름이나 스크린샷으로 검색해 Traderie 매물 페이지로 바로 이동합니다.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Noto+Serif+KR:wght@600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d0a07; --panel:#171209; --panel-2:#1e170d; --plate:#0a0705;
+  --line:#3a2d1a; --line-2:#5a4526;
+  --text:#eadfc9; --dim:#95threshold;
+  --dim:#95856a; --gold:#d4b46a; --gold-deep:#a8894f;
+  --uniq:#c7b377; --set:#3fc96a; --rune:#ff9b3d; --rw:#e5c88b; --base:#b9b2a4;
+  --focus:#f0d089;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:"Noto Sans KR",system-ui,sans-serif;
+  background:var(--bg);
+  background-image:radial-gradient(120% 60% at 50% -8%, #201709 0%, var(--bg) 62%);
+  color:var(--text); min-height:100dvh; line-height:1.55;
+}
+.wrap{max-width:600px; margin:0 auto; padding:28px 16px 56px}
+
+/* ── header ── */
+.eyebrow{
+  font-family:Cinzel,serif; font-weight:600; letter-spacing:.32em; font-size:11px;
+  color:var(--gold-deep); text-align:center; text-transform:uppercase;
+}
+h1{
+  font-family:"Noto Serif KR",serif; font-weight:700; font-size:clamp(24px,6vw,30px);
+  text-align:center; color:var(--gold); margin-top:6px; letter-spacing:.02em;
+  text-shadow:0 0 24px rgba(212,180,106,.18);
+}
+.tagline{text-align:center; color:var(--dim); font-size:13.5px; margin-top:8px}
+.rule{
+  height:1px; margin:20px auto 18px; max-width:420px;
+  background:linear-gradient(90deg, transparent, var(--line-2), transparent);
+  position:relative;
+}
+.rule::after{
+  content:"◆"; position:absolute; left:50%; top:50%; transform:translate(-50%,-52%);
+  color:var(--gold-deep); font-size:9px; background:var(--bg); padding:0 8px;
+}
+
+/* ── tabs ── */
+.tabs{display:flex; gap:6px; border:1px solid var(--line); background:var(--panel); border-radius:10px; padding:5px}
+.tabs button{
+  flex:1; padding:10px 8px; font:inherit; font-weight:500; font-size:14px;
+  color:var(--dim); background:none; border:0; border-radius:7px; cursor:pointer;
+  transition:background .15s,color .15s;
+}
+.tabs button[aria-selected="true"]{background:var(--panel-2); color:var(--gold); box-shadow:inset 0 0 0 1px var(--line-2)}
+.tabs button:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+
+.pane{margin-top:16px}
+[hidden]{display:none!important}
+
+/* ── search ── */
+.searchbox{position:relative}
+#q{
+  width:100%; padding:14px 16px; font:inherit; font-size:16px;
+  color:var(--text); background:var(--panel); border:1px solid var(--line-2); border-radius:10px;
+}
+#q::placeholder{color:#6f6350}
+#q:focus-visible{outline:2px solid var(--focus); outline-offset:1px}
+.hint{color:var(--dim); font-size:12.5px; margin-top:8px}
+
+.results{margin-top:12px; display:flex; flex-direction:column; gap:6px}
+.row{
+  display:flex; align-items:center; gap:10px; text-align:left; width:100%;
+  padding:11px 13px; background:var(--panel); border:1px solid var(--line); border-radius:9px;
+  cursor:pointer; font:inherit; color:var(--text); transition:border-color .15s, background .15s;
+}
+.row:hover{border-color:var(--line-2); background:var(--panel-2)}
+.row:focus-visible{outline:2px solid var(--focus); outline-offset:1px}
+.row .nm{font-family:"Noto Serif KR",serif; font-weight:600; font-size:15.5px}
+.row .sub{color:var(--dim); font-size:12px; margin-top:1px}
+.row .grow{flex:1; min-width:0}
+.row .sub, .row .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block}
+.chip{
+  flex:none; font-size:11px; letter-spacing:.06em; color:var(--dim);
+  border:1px solid var(--line); border-radius:99px; padding:3px 9px; white-space:nowrap;
+}
+.pct{flex:none; font-size:11.5px; color:var(--gold-deep); min-width:34px; text-align:right}
+.c-u{color:var(--uniq)} .c-s{color:var(--set)} .c-r{color:var(--rune)} .c-w{color:var(--rw)} .c-b{color:var(--base)}
+.empty{color:var(--dim); font-size:13.5px; padding:14px 4px}
+
+/* ── item plate (signature) ── */
+.plate{
+  margin-top:18px; padding:22px 18px 18px; text-align:center;
+  background:var(--plate); border:1px solid var(--line-2); border-radius:4px;
+  box-shadow:inset 0 0 0 1px #000, inset 0 0 42px rgba(0,0,0,.55), 0 10px 30px rgba(0,0,0,.45);
+  animation:plate-in .18s ease-out;
+}
+@keyframes plate-in{from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none}}
+.p-ko{font-family:"Noto Serif KR",serif; font-weight:700; font-size:22px; line-height:1.3}
+.p-en{color:var(--dim); font-size:13.5px; margin-top:3px}
+.p-base{color:var(--base); font-size:13px; margin-top:10px}
+.p-type{margin-top:12px}
+.p-type .chip{color:var(--gold-deep); border-color:var(--line-2)}
+.cta{display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; justify-content:center}
+.btn{
+  font:inherit; font-weight:500; font-size:14.5px; cursor:pointer; text-decoration:none;
+  padding:11px 16px; border-radius:8px; border:1px solid var(--line-2);
+  background:var(--panel-2); color:var(--text); transition:filter .15s, border-color .15s;
+  display:inline-flex; align-items:center; gap:7px;
+}
+.btn:hover{filter:brightness(1.15)}
+.btn:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+.btn-gold{
+  background:linear-gradient(180deg,#2a2011,#1b1409); border-color:var(--gold-deep); color:var(--gold);
+  box-shadow:inset 0 1px 0 rgba(212,180,106,.15);
+}
+
+/* ── OCR ── */
+.drop{
+  display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center;
+  border:1.5px dashed var(--line-2); border-radius:12px; background:var(--panel);
+  padding:26px 16px; cursor:pointer; color:var(--dim); transition:border-color .15s;
+}
+.drop:hover,.drop.on{border-color:var(--gold-deep); color:var(--text)}
+.drop strong{color:var(--gold); font-weight:600}
+.drop input{position:absolute; width:1px; height:1px; opacity:0; overflow:hidden}
+.shot{margin-top:12px; max-width:100%; border:1px solid var(--line); border-radius:8px; display:block}
+.ocr-actions{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap}
+.progress{margin-top:12px; height:6px; border-radius:99px; background:var(--panel-2); border:1px solid var(--line); overflow:hidden}
+.progress i{display:block; height:100%; width:0%; background:linear-gradient(90deg,var(--gold-deep),var(--gold)); transition:width .2s}
+.status{color:var(--dim); font-size:12.5px; margin-top:7px; min-height:1.2em}
+#ocrText{
+  width:100%; margin-top:12px; min-height:88px; resize:vertical; font:inherit; font-size:13.5px;
+  color:var(--text); background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:10px 12px;
+}
+#ocrText:focus-visible{outline:2px solid var(--focus)}
+
+/* ── price ledger ── */
+.ledger{
+  margin-top:14px; padding:16px 14px 14px;
+  background:var(--panel); border:1px solid var(--line-2); border-radius:4px;
+  box-shadow:inset 0 0 0 1px #000, 0 8px 24px rgba(0,0,0,.35);
+}
+.ledger-head{display:flex; align-items:baseline; justify-content:space-between; gap:10px; border-bottom:1px solid var(--line); padding-bottom:10px}
+.ledger-title{font-family:"Noto Serif KR",serif; font-weight:700; color:var(--gold); font-size:15px; letter-spacing:.04em}
+.ledger-sub{color:var(--dim); font-size:12px; text-align:right}
+.pr-summary{margin-top:10px; font-size:13px; color:#c9b98f; background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:9px 12px; line-height:1.5}
+.pr-list{display:flex; flex-direction:column}
+.lst{padding:11px 2px; border-bottom:1px solid var(--line)}
+.lst:last-child{border-bottom:0}
+.lst .pg{font-family:"Noto Serif KR",serif; font-weight:600; font-size:14.5px; color:var(--rune); line-height:1.5}
+.lst .pg .or{color:var(--dim); font-weight:400; font-size:12px; margin:0 7px}
+.lst .meta{display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:5px; color:var(--dim); font-size:12px}
+.lst .props{display:flex; flex-wrap:wrap; gap:5px; margin-top:7px}
+.lst .props .chip{font-size:10.5px; padding:2px 8px; letter-spacing:0}
+.pr-foot{display:flex; justify-content:center; margin-top:12px}
+.spin{display:inline-block; width:12px; height:12px; border:2px solid var(--line-2); border-top-color:var(--gold); border-radius:50%; animation:spin .8s linear infinite; vertical-align:-2px; margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.err{margin-top:10px; color:#e08b7a; font-size:13px; background:#20100c; border:1px solid #4a251c; border-radius:8px; padding:10px 12px; line-height:1.55}
+.err a{color:#eaa38f}
+.debug{margin-top:10px; color:var(--dim); font-size:12px}
+.debug summary{cursor:pointer}
+.debug pre{margin-top:8px; max-height:220px; overflow:auto; background:var(--plate); border:1px solid var(--line); border-radius:8px; padding:10px; font-size:11px; white-space:pre-wrap; word-break:break-all}
+
+/* ── worker setup ── */
+.setup{margin-top:26px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px}
+.setup summary{cursor:pointer; color:var(--gold-deep); font-weight:500; font-size:13.5px}
+.setup summary:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+.setup-row{display:flex; gap:8px; margin-top:10px}
+.setup-row input{flex:1; min-width:0; padding:10px 12px; font:inherit; font-size:13.5px; color:var(--text); background:var(--panel-2); border:1px solid var(--line-2); border-radius:8px}
+.setup-row input::placeholder{color:#6f6350}
+.setup-row input:focus-visible{outline:2px solid var(--focus)}
+
+/* ── footer notes ── */
+.notes{margin-top:30px; border-top:1px solid var(--line); padding-top:14px; color:var(--dim); font-size:12.5px}
+.notes p{margin-top:6px}
+.notes b{color:#b7a582; font-weight:500}
+a.plain{color:var(--gold-deep)}
+
+@media (prefers-reduced-motion: reduce){
+  *{animation:none!important; transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Diablo II · Resurrected</div>
+    <h1>트레더리 아이템 파인더</h1>
+    <p class="tagline">한글 이름이나 스크린샷으로 검색하면, Traderie 매물 페이지로 바로 연결해 드립니다.</p>
+    <div class="rule" role="presentation"></div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="검색 방식">
+    <button id="tab-search" role="tab" aria-selected="true" aria-controls="pane-search">이름으로 검색</button>
+    <button id="tab-ocr" role="tab" aria-selected="false" aria-controls="pane-ocr">스크린샷으로 검색</button>
+  </nav>
+
+  <!-- ── name search ── -->
+  <section class="pane" id="pane-search" role="tabpanel" aria-labelledby="tab-search">
+    <div class="searchbox">
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="아이템 이름 입력 — 예: 수수께끼, 할리퀸, 추위의 파열, ber">
+    </div>
+    <p class="hint">한글·영문 정식 명칭은 물론 자주 쓰는 약칭(수수, 콜투, 조던, 샤코…)도 알아듣습니다.</p>
+    <div id="results" class="results" aria-live="polite"></div>
+  </section>
+
+  <!-- ── screenshot search ── -->
+  <section class="pane" id="pane-ocr" role="tabpanel" aria-labelledby="tab-ocr" hidden>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="image/*">
+      <strong>아이템 스크린샷 올리기</strong>
+      <span>탭해서 사진 선택 · PC에서는 파일을 끌어다 놓아도 됩니다</span>
+      <span style="font-size:12px">아이템 설명창(이름 부분)이 크게 나오도록 잘라서 올리면 인식률이 좋아요</span>
+    </label>
+    <img id="shot" class="shot" alt="업로드한 스크린샷 미리보기" hidden>
+    <div class="ocr-actions">
+      <button class="btn btn-gold" id="runOcr" hidden>글자 인식 시작</button>
+      <button class="btn" id="rematch" hidden>이 텍스트로 다시 찾기</button>
+    </div>
+    <div class="progress" id="prog" hidden><i></i></div>
+    <p class="status" id="status" aria-live="polite"></p>
+    <textarea id="ocrText" hidden aria-label="인식된 텍스트 (수정 가능)"></textarea>
+    <div id="ocrResults" class="results" aria-live="polite"></div>
+  </section>
+
+  <!-- ── selected item plate ── -->
+  <section id="plate" class="plate" hidden aria-live="polite">
+    <div class="p-ko" id="p-ko"></div>
+    <div class="p-en" id="p-en"></div>
+    <div class="p-base" id="p-base"></div>
+    <div class="p-type"><span class="chip" id="p-type"></span></div>
+    <div class="cta">
+      <button class="btn btn-gold" id="fetchPrices">시세 불러오기</button>
+      <a class="btn" id="go" target="_blank" rel="noopener">Traderie에서 보기 ↗</a>
+      <button class="btn" id="copyEn">영문명 복사</button>
+    </div>
+  </section>
+
+  <!-- ── in-page prices ── -->
+  <section id="prices" class="ledger" hidden>
+    <div class="ledger-head">
+      <span class="ledger-title">현재 매물 호가</span>
+      <span class="ledger-sub" id="pr-sub"></span>
+    </div>
+    <div id="pr-summary" class="pr-summary" hidden></div>
+    <div id="pr-list" class="pr-list"></div>
+    <p class="status" id="pr-status" aria-live="polite"></p>
+    <div id="pr-err" class="err" hidden></div>
+    <div class="pr-foot"><button class="btn" id="pr-more" hidden>매물 더 보기</button></div>
+    <details class="debug" id="pr-debug" hidden>
+      <summary>응답 원본 보기 (문제 해결용)</summary>
+      <pre id="pr-raw"></pre>
+    </details>
+  </section>
+
+  <!-- ── worker setup ── -->
+  <details class="setup" id="setup">
+    <summary>시세 연동 설정 — Cloudflare Worker 프록시</summary>
+    <p class="hint" style="margin-top:10px">시세를 이 페이지 안에 표시하려면 무료 Cloudflare Worker 프록시가 하나 필요합니다 (브라우저가 트레더리를 직접 부르지 못하게 막혀 있어서요). 만드는 방법은 README에 5분 가이드로 적어 두었습니다. 배포한 Worker 주소를 여기 저장해 주세요.</p>
+    <div class="setup-row">
+      <input id="workerUrl" type="url" inputmode="url" spellcheck="false" autocomplete="off"
+             placeholder="https://d2r-proxy.내계정.workers.dev">
+      <button class="btn" id="saveWorker">저장</button>
+    </div>
+    <p class="hint" id="workerState"></p>
+  </details>
+
+  <footer class="notes">
+    <p><b>시세 표시</b> — ‘시세 불러오기’는 프록시를 거쳐 트레더리 매물을 이 페이지에 보여줍니다. 호가는 참고용이며, 실제 거래·판매자 연락은 ‘Traderie에서 보기’로 이동해 진행하세요.</p>
+    <p><b>래더 · 플랫폼</b> — 페이지 안 시세에는 여러 모드의 매물이 섞여 있을 수 있습니다. 매물별 표시 정보를 확인하고, 정밀 필터(래더/스탠, 소프트/하드, PC/콘솔)는 트레더리 화면 상단에서 선택하세요.</p>
+    <p><b>참고</b> — 시세 연동은 트레더리의 비공식 API를 사용하므로 사이트 개편 시 예고 없이 멈출 수 있습니다. 그 경우에도 검색·링크 기능은 계속 동작합니다. 이 도구는 팬 유틸리티이며 Blizzard·Traderie와 무관합니다.</p>
+  </footer>
+</div>
+
+<script src="data.js"></script>
+<script>
+(function(){
+"use strict";
+const $ = s => document.querySelector(s);
+const DB = (window.D2DB && window.D2DB.items) || [];
+
+/* ── normalize & fuzzy ── */
+const norm = s => (s||"").normalize("NFC").toLowerCase()
+  .replace(/[\s\u00b7\.\,'’\-\(\)\[\]:_+*]/g, "");
+const grams = s => { const g=new Set(); for(let i=0;i<s.length-1;i++) g.add(s.slice(i,i+2)); return g; };
+function dice(a,b){
+  if(!a||!b) return 0;
+  if(a.length<2||b.length<2) return a===b?1:0;
+  const A=grams(a),B=grams(b); let hit=0;
+  for(const g of A) if(B.has(g)) hit++;
+  return (2*hit)/(A.size+B.size);
+}
+for(const it of DB){
+  it._n=[norm(it.k), norm(it.e), ...((it.a||[]).map(norm))].filter(Boolean);
+  it._b=norm(it.bk||"");
+}
+const TYPE_KO={u:"유니크",s:"세트",r:"룬",w:"룬어",b:"일반 · 베이스"};
+const TYPE_BOOST={u:.05,w:.05,r:.05,s:.03,b:0};
+
+function scoreItem(q,it){
+  let best=0;
+  for(const c of it._n){
+    let v=0;
+    if(c===q) v=1;
+    else if(c.startsWith(q)) v=.96 - Math.min(.06,(c.length-q.length)*.004);
+    else if(q.length>=2 && c.includes(q)) v=.86;
+    else if(c.length>=3 && q.includes(c)) v=.82;            /* OCR line longer than name */
+    else v=dice(q,c)*.9;
+    if(v>best) best=v;
+  }
+  return best>=.4 ? best+TYPE_BOOST[it.t]*Math.min(1,best) : best;
+}
+function search(qRaw,{min=.55,limit=30,types=null}={}){
+  const q=norm(qRaw);
+  if(q.length<1) return [];
+  const out=[];
+  for(const it of DB){
+    if(types && !types.has(it.t)) continue;
+    const s=scoreItem(q,it);
+    if(s>=min) out.push([s,it]);
+  }
+  out.sort((a,b)=> b[0]-a[0] || a[1].k.length-b[1].k.length);
+  return out.slice(0,limit);
+}
+
+/* ── rendering ── */
+function rowEl([s,it],withPct){
+  const b=document.createElement("button");
+  b.type="button"; b.className="row";
+  b.innerHTML =
+    `<span class="grow"><span class="nm c-${it.t}"></span><span class="sub"></span></span>`+
+    (withPct?`<span class="pct">${Math.min(99,Math.round(s*100))}%</span>`:"")+
+    `<span class="chip">${TYPE_KO[it.t]}</span>`;
+  b.querySelector(".nm").textContent=it.k;
+  b.querySelector(".sub").textContent=it.e+(it.bk&&it.bk!==it.k?" · "+it.bk:"");
+  b.addEventListener("click",()=>select(it));
+  return b;
+}
+function renderInto(el,list,withPct,emptyMsg){
+  el.textContent="";
+  if(!list.length){
+    if(emptyMsg){ const p=document.createElement("p"); p.className="empty"; p.textContent=emptyMsg; el.appendChild(p); }
+    return;
+  }
+  for(const r of list) el.appendChild(rowEl(r,withPct));
+}
+function select(it){
+  curItem=it;
+  $("#p-ko").textContent=it.k;
+  $("#p-ko").className="p-ko c-"+it.t;
+  $("#p-en").textContent=it.e;
+  $("#p-base").textContent = it.be ? `베이스: ${it.bk||it.be} (${it.be})` : "";
+  $("#p-base").hidden=!it.be;
+  $("#p-type").textContent=TYPE_KO[it.t];
+  $("#go").href="https://traderie.com/diablo2resurrected/products?search="+encodeURIComponent(it.e);
+  resetLedger();
+  const plate=$("#plate");
+  plate.hidden=false;
+  plate.dataset.en=it.e;
+  plate.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+$("#copyEn").addEventListener("click",async()=>{
+  const en=$("#plate").dataset.en||"";
+  try{ await navigator.clipboard.writeText(en); $("#copyEn").textContent="복사됨 ✓"; }
+  catch(e){ const t=document.createElement("textarea"); t.value=en; document.body.appendChild(t);
+    t.select(); document.execCommand("copy"); t.remove(); $("#copyEn").textContent="복사됨 ✓"; }
+  setTimeout(()=>$("#copyEn").textContent="영문명 복사",1400);
+});
+
+/* ── name search tab ── */
+let deb;
+$("#q").addEventListener("input",e=>{
+  clearTimeout(deb);
+  deb=setTimeout(()=>{
+    const v=e.target.value.trim();
+    renderInto($("#results"), v?search(v):[], false,
+      v? "일치하는 아이템이 없어요. 철자를 바꾸거나 더 짧게 입력해 보세요." : "");
+  },110);
+});
+$("#q").addEventListener("keydown",e=>{
+  if(e.key==="Enter"){ const first=$("#results .row"); if(first) first.click(); }
+});
+
+/* ── tabs ── */
+function showTab(which){
+  const s=which==="search";
+  $("#tab-search").setAttribute("aria-selected",s);
+  $("#tab-ocr").setAttribute("aria-selected",!s);
+  $("#pane-search").hidden=!s;
+  $("#pane-ocr").hidden=s;
+  if(s) $("#q").focus();
+}
+$("#tab-search").addEventListener("click",()=>showTab("search"));
+$("#tab-ocr").addEventListener("click",()=>showTab("ocr"));
+
+/* ── OCR ── */
+let img=null, tessReady=null;
+function loadTesseract(){
+  if(window.Tesseract) return Promise.resolve();
+  if(tessReady) return tessReady;
+  tessReady=new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    s.onload=res; s.onerror=()=>rej(new Error("Tesseract 로드 실패"));
+    document.head.appendChild(s);
+  });
+  return tessReady;
+}
+function setStatus(t){ $("#status").textContent=t; }
+function setProg(p){ $("#prog").hidden=false; $("#prog i").style.width=(p*100).toFixed(0)+"%"; }
+
+function handleFile(f){
+  if(!f || !f.type.startsWith("image/")) return;
+  const url=URL.createObjectURL(f);
+  const el=$("#shot");
+  el.src=url; el.hidden=false;
+  img=new Image();
+  img.onload=()=>{ $("#runOcr").hidden=false; setStatus("준비 완료 — ‘글자 인식 시작’을 눌러주세요."); };
+  img.src=url;
+  $("#ocrText").hidden=true; $("#rematch").hidden=true;
+  $("#ocrResults").textContent=""; $("#prog").hidden=true;
+}
+const drop=$("#drop");
+$("#file").addEventListener("change",e=>handleFile(e.target.files[0]));
+["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("on");}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("on");}));
+drop.addEventListener("drop",e=>handleFile(e.dataTransfer.files[0]));
+
+function preprocess(image){
+  const targetW=Math.min(1600,Math.max(1000,image.naturalWidth));
+  const scale=targetW/image.naturalWidth;
+  const c=document.createElement("canvas");
+  c.width=Math.round(image.naturalWidth*scale);
+  c.height=Math.round(image.naturalHeight*scale);
+  const x=c.getContext("2d",{willReadFrequently:true});
+  x.imageSmoothingQuality="high";
+  x.drawImage(image,0,0,c.width,c.height);
+  const d=x.getImageData(0,0,c.width,c.height), px=d.data;
+  const hist=new Uint32Array(256); let sum=0;
+  for(let i=0;i<px.length;i+=4){
+    const y=(px[i]*299+px[i+1]*587+px[i+2]*114)/1000|0;
+    px[i]=px[i+1]=px[i+2]=y; hist[y]++; sum+=y;
+  }
+  const n=px.length/4, mean=sum/n;
+  let acc=0, lo=0, hi=255;
+  for(let v=0;v<256;v++){ acc+=hist[v]; if(acc>=n*.02){lo=v;break;} }
+  acc=0;
+  for(let v=255;v>=0;v--){ acc+=hist[v]; if(acc>=n*.02){hi=v;break;} }
+  const range=Math.max(1,hi-lo), invert=mean<120;
+  for(let i=0;i<px.length;i+=4){
+    let y=Math.max(0,Math.min(255,((px[i]-lo)/range)*255));
+    if(invert) y=255-y;
+    px[i]=px[i+1]=px[i+2]=y;
+  }
+  x.putImageData(d,0,0);
+  return c;
+}
+
+$("#runOcr").addEventListener("click",async()=>{
+  if(!img) return;
+  $("#runOcr").disabled=true;
+  try{
+    setStatus("인식 엔진을 불러오는 중… (처음 한 번은 시간이 조금 걸립니다)");
+    setProg(.03);
+    await loadTesseract();
+    const canvas=preprocess(img);
+    setStatus("글자를 읽는 중…");
+    const {data}=await Tesseract.recognize(canvas,"kor+eng",{
+      logger:m=>{ if(m.status==="recognizing text") setProg(.15+m.progress*.85); }
+    });
+    setProg(1);
+    const text=(data.text||"").trim();
+    $("#ocrText").value=text;
+    $("#ocrText").hidden=false; $("#rematch").hidden=false;
+    matchFromText(text);
+  }catch(err){
+    console.error(err);
+    setStatus("인식에 실패했어요. 네트워크를 확인하거나, 이름 검색 탭을 이용해 주세요.");
+  }finally{
+    $("#runOcr").disabled=false;
+  }
+});
+$("#rematch").addEventListener("click",()=>matchFromText($("#ocrText").value));
+
+function matchFromText(text){
+  const lines=text.split(/\n+/).map(s=>s.trim())
+    .filter(s=>s.length>=2 && /[가-힣a-zA-Z]/.test(s)).slice(0,24);
+  const agg=new Map();
+  const pass=(types,min)=>{
+    for(const line of lines){
+      for(const [s,it] of search(line,{min,limit:5,types})){
+        const cur=agg.get(it)||0;
+        if(s>cur) agg.set(it,s);
+      }
+    }
+  };
+  pass(new Set(["u","s","w","r"]),.5);
+  if(agg.size===0) pass(new Set(["b"]),.55);
+  /* base-name confirmation bonus: a second line matching the item's base type */
+  for(const [it,s] of agg){
+    if(!it._b) continue;
+    for(const line of lines){
+      if(dice(norm(line),it._b)>=.72){ agg.set(it,Math.min(1.05,s+.08)); break; }
+    }
+  }
+  const list=[...agg.entries()].map(([it,s])=>[s,it])
+    .sort((a,b)=>b[0]-a[0]).slice(0,8);
+  renderInto($("#ocrResults"),list,true,
+    "인식된 글자에서 아이템을 찾지 못했어요. 위 텍스트에서 아이템 이름만 남기고 ‘다시 찾기’를 누르거나, 이름 검색 탭을 써보세요.");
+  setStatus(list.length? "가장 비슷한 아이템이에요. 맞는 것을 선택해 주세요." : "");
+}
+
+/* ══ in-page prices via Cloudflare Worker proxy ══ */
+let curItem=null;
+const WKEY="d2rWorkerUrl";
+const workerBase=()=> (localStorage.getItem(WKEY)||"").trim().replace(/\/+$/,"");
+
+function setWorkerState(msg){
+  const w=workerBase();
+  $("#workerUrl").value=w;
+  $("#workerState").textContent = msg || (w ? "연결된 Worker: "+w : "아직 저장된 Worker 주소가 없습니다.");
+}
+$("#saveWorker").addEventListener("click",()=>{
+  const v=$("#workerUrl").value.trim().replace(/\/+$/,"");
+  if(v && !/^https:\/\/.+/i.test(v)){ $("#workerState").textContent="주소는 https:// 로 시작해야 합니다."; return; }
+  if(v) localStorage.setItem(WKEY,v); else localStorage.removeItem(WKEY);
+  setWorkerState(v ? "저장했습니다. 아이템을 선택하고 ‘시세 불러오기’를 눌러 보세요." : "저장된 주소를 지웠습니다.");
+});
+setWorkerState();
+
+const PR={id:null, en:"", page:0, count:0, mode:"item", freq:new Map(), busy:false};
+function resetLedger(){
+  PR.id=null; PR.en=""; PR.page=0; PR.count=0; PR.mode="item"; PR.freq=new Map(); PR.busy=false;
+  $("#prices").hidden=true;
+  $("#pr-list").textContent=""; $("#pr-status").textContent="";
+  $("#pr-summary").hidden=true; $("#pr-err").hidden=true;
+  $("#pr-more").hidden=true; $("#pr-debug").hidden=true; $("#pr-sub").textContent="";
+}
+
+function fmtRel(iso){
+  const t=Date.parse(iso||"");
+  if(isNaN(t)) return "";
+  const m=Math.max(0,(Date.now()-t)/60000);
+  if(m<1) return "방금 전";
+  if(m<60) return Math.floor(m)+"분 전";
+  if(m<1440) return Math.floor(m/60)+"시간 전";
+  if(m<43200) return Math.floor(m/1440)+"일 전";
+  return new Date(t).toLocaleDateString("ko-KR");
+}
+async function fetchJson(url){
+  const ctl=new AbortController();
+  const tm=setTimeout(()=>ctl.abort(),15000);
+  let r;
+  try{ r=await fetch(url,{headers:{accept:"application/json"},signal:ctl.signal}); }
+  catch(e){ clearTimeout(tm); throw Object.assign(new Error("NET"),{net:true}); }
+  clearTimeout(tm);
+  const body=await r.text();
+  const fail=why=>{ throw Object.assign(new Error(why),{status:r.status,body:body.slice(0,400),url}); };
+  if(!r.ok) fail("HTTP "+r.status);
+  try{ return JSON.parse(body); }catch(e){ fail("NOTJSON"); }
+}
+function findArray(payload,keys){
+  if(Array.isArray(payload)) return payload;
+  if(payload && typeof payload==="object"){
+    for(const k of keys) if(Array.isArray(payload[k])) return payload[k];
+    for(const v of Object.values(payload))
+      if(Array.isArray(v)&&v.length&&typeof v[0]==="object") return v;
+  }
+  return null;
+}
+async function resolveItemId(en){
+  const data=await fetchJson(workerBase()+"/api/diablo2resurrected/items?search="+encodeURIComponent(en));
+  const arr=findArray(data,["items","data","results"])||[];
+  const nq=norm(en);
+  const nameOf=x=>x&&(x.name||x.title||"");
+  const hit=arr.find(x=>norm(nameOf(x))===nq)||arr.find(x=>norm(nameOf(x)).startsWith(nq))||arr[0];
+  if(!hit || hit.id==null) throw Object.assign(new Error("NOID"),{noid:true});
+  return hit.id;
+}
+function priceGroups(l){
+  if(Array.isArray(l.prices)&&l.prices.length){
+    const g=new Map();
+    for(const p of l.prices){
+      const k=p.group??0;
+      if(!g.has(k)) g.set(k,[]);
+      const q=Number(p.quantity)||1;
+      g.get(k).push((q>1? q+"× ":"")+(p.name||p.item_name||"?"));
+    }
+    return [...g.values()].map(a=>a.join(" + "));
+  }
+  return l.make_offer ? ["가격 제안 받는 중"] : [];
+}
+function listingRow(l){
+  const d=document.createElement("div");
+  d.className="lst";
+  const pg=document.createElement("div"); pg.className="pg";
+  const groups=priceGroups(l);
+  if(!groups.length) groups.push("가격 정보 없음");
+  groups.forEach((g,i)=>{
+    if(i){ const or=document.createElement("span"); or.className="or"; or.textContent="또는"; pg.appendChild(or); }
+    pg.appendChild(document.createTextNode(g));
+  });
+  d.appendChild(pg);
+  const meta=document.createElement("div"); meta.className="meta";
+  const bits=[];
+  const iname=l.item&&l.item.name;
+  if(iname && norm(iname)!==norm(PR.en)) bits.push(iname);
+  if(Number(l.amount)>1) bits.push("수량 "+l.amount);
+  if(l.seller&&l.seller.username) bits.push("판매자 "+l.seller.username);
+  const rel=fmtRel(l.updated_at||l.created_at); if(rel) bits.push(rel);
+  for(const b of bits){ const s=document.createElement("span"); s.textContent=b; meta.appendChild(s); }
+  if(bits.length) d.appendChild(meta);
+  if(Array.isArray(l.properties)&&l.properties.length){
+    const pr=document.createElement("div"); pr.className="props";
+    for(const p of l.properties.slice(0,8)){
+      let v = p.type==="string"?p.string : p.type==="number"?p.number : p.type==="bool"?(p.bool?"":null):null;
+      if(v===null && p.type==="bool") continue;
+      const c=document.createElement("span"); c.className="chip";
+      c.textContent = p.property + (v===""||v==null ? "" : ": "+v);
+      pr.appendChild(c);
+    }
+    if(pr.children.length) d.appendChild(pr);
+  }
+  return d;
+}
+function showErr(e){
+  const box=$("#pr-err"); box.hidden=false; box.textContent="";
+  const p=t=>{ const el=document.createElement("p"); el.textContent=t; box.appendChild(el); };
+  if(e.net){ p("프록시에 연결하지 못했습니다. Worker 주소가 맞는지, 네트워크가 살아있는지 확인해 주세요."); }
+  else if((e.status===403||e.status===503) || /challenge|cloudflare|<html/i.test(e.body||"")){
+    p("트레더리의 봇 차단(Cloudflare)에 걸린 것 같습니다. 잠시 후 다시 시도해 보세요. 반복되면 이 방식이 막힌 것일 수 있습니다 — 그래도 ‘Traderie에서 보기’ 링크는 항상 동작합니다.");
+  }
+  else if(e.message==="NOID"){ p("트레더리에서 이 아이템의 ID를 찾지 못했습니다. 이름이 살짝 다른 항목일 수 있어요. ‘Traderie에서 보기’로 직접 확인해 주세요."); }
+  else if(e.message==="NOTJSON"){ p("프록시 응답이 JSON이 아닙니다. Worker 코드가 최신인지, 주소가 정확한지 확인해 주세요. (README의 문제 해결 항목 참고)"); }
+  else { p("시세를 불러오지 못했습니다 ("+e.message+"). 잠시 후 다시 시도해 주세요."); }
+  if(e.url||e.body){
+    $("#pr-debug").hidden=false;
+    $("#pr-raw").textContent=(e.url?("요청: "+e.url+"\n\n"):"")+(e.body||"");
+  }
+}
+function renderSummary(){
+  const box=$("#pr-summary");
+  const top=[...PR.freq.entries()].filter(([g])=>g&&g!=="가격 제안 받는 중")
+    .sort((a,b)=>b[1]-a[1]).slice(0,2).filter(([,n])=>n>=2);
+  if(PR.count>=3 && top.length){
+    box.hidden=false;
+    box.textContent="자주 보이는 호가: "+top.map(([g,n])=>`${g} (${n}건)`).join(" · ");
+  }
+  $("#pr-sub").textContent=PR.count?`${PR.count}개 표시 · 갱신순`:"";
+}
+async function loadPrices(reset){
+  if(PR.busy) return;
+  const w=workerBase();
+  if(!w){
+    const setup=$("#setup"); setup.open=true;
+    setup.scrollIntoView({behavior:"smooth",block:"center"});
+    $("#workerState").textContent="먼저 Worker 주소를 저장해야 시세를 불러올 수 있어요.";
+    $("#workerUrl").focus();
+    return;
+  }
+  if(!curItem) return;
+  if(reset){
+    const keep=curItem;
+    resetLedger();
+    curItem=keep; PR.en=curItem.e;
+    $("#prices").hidden=false;
+  }
+  PR.busy=true;
+  $("#pr-err").hidden=true;
+  $("#pr-status").innerHTML='<span class="spin"></span>매물을 불러오는 중…';
+  $("#pr-more").disabled=true;
+  try{
+    if(PR.mode==="item" && PR.id==null){
+      try{ PR.id=await resolveItemId(PR.en); }
+      catch(e){
+        if(e.noid||e.message==="NOTJSON"||/^HTTP 4/.test(e.message)) PR.mode="search";
+        else throw e;
+      }
+    }
+    const q = PR.mode==="item"
+      ? "item="+encodeURIComponent(PR.id)
+      : "search="+encodeURIComponent(PR.en);
+    const data=await fetchJson(w+"/api/diablo2resurrected/listings?"+q+"&selling=true&auction=false&page="+PR.page);
+    const arr=findArray(data,["listings"])||[];
+    if(PR.page===0 && arr.length){
+      $("#pr-debug").hidden=false;
+      $("#pr-raw").textContent=JSON.stringify(arr[0],null,1).slice(0,2000);
+    }
+    for(const l of arr){
+      $("#pr-list").appendChild(listingRow(l));
+      const g=priceGroups(l)[0]||"";
+      PR.freq.set(g,(PR.freq.get(g)||0)+1);
+    }
+    PR.count+=arr.length; PR.page++;
+    renderSummary();
+    if(arr.length===0){
+      $("#pr-status").textContent = PR.count? "매물이 더 없습니다." : "지금 등록된 매물이 없어요. ‘Traderie에서 보기’로 완료된 거래를 참고해 보세요.";
+      $("#pr-more").hidden=true;
+    }else{
+      $("#pr-status").textContent="";
+      $("#pr-more").hidden=false;
+    }
+  }catch(e){
+    $("#pr-status").textContent="";
+    showErr(e);
+    if(PR.count===0) $("#pr-more").hidden=true;
+  }finally{
+    PR.busy=false;
+    $("#pr-more").disabled=false;
+  }
+}
+$("#fetchPrices").addEventListener("click",()=>loadPrices(true));
+$("#pr-more").addEventListener("click",()=>loadPrices(false));
+
+window.__d2r={search,norm,dice};
+})();
+</script>
+</body>
+</html>
