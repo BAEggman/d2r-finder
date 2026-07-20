@@ -215,12 +215,12 @@ a.plain{color:var(--gold-deep)}
     <label class="drop" id="drop">
       <input type="file" id="file" accept="image/*">
       <strong>아이템 스크린샷 올리기</strong>
-      <span>탭해서 사진 선택 · PC에서는 파일을 끌어다 놓아도 됩니다</span>
-      <span style="font-size:12px">아이템 설명창(이름 부분)이 크게 나오도록 잘라서 올리면 인식률이 좋아요</span>
+      <span>탭해서 사진 선택 · PC에서는 끌어다 놓거나 Ctrl+V로 붙여넣어도 됩니다</span>
+      <span style="font-size:12px">아이템 설명창이 크게 나오도록 잘라서 올리면 더 정확해요</span>
     </label>
     <img id="shot" class="shot" alt="업로드한 스크린샷 미리보기" hidden>
     <div class="ocr-actions">
-      <button class="btn btn-gold" id="runOcr" hidden>글자 인식 시작</button>
+      <button class="btn btn-gold" id="runOcr" hidden>아이템 인식하기</button>
       <button class="btn" id="rematch" hidden>이 텍스트로 다시 찾기</button>
     </div>
     <div class="progress" id="prog" hidden><i></i></div>
@@ -399,30 +399,19 @@ function showTab(which){
 $("#tab-search").addEventListener("click",()=>showTab("search"));
 $("#tab-ocr").addEventListener("click",()=>showTab("ocr"));
 
-/* ── OCR ── */
-let img=null, tessReady=null;
-function loadTesseract(){
-  if(window.Tesseract) return Promise.resolve();
-  if(tessReady) return tessReady;
-  tessReady=new Promise((res,rej)=>{
-    const s=document.createElement("script");
-    s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-    s.onload=res; s.onerror=()=>rej(new Error("Tesseract 로드 실패"));
-    document.head.appendChild(s);
-  });
-  return tessReady;
-}
+/* ── 스크린샷 인식 (Gemini) ── */
+let shotFile=null;
 function setStatus(t){ $("#status").textContent=t; }
 function setProg(p){ $("#prog").hidden=false; $("#prog i").style.width=(p*100).toFixed(0)+"%"; }
 
 function handleFile(f){
   if(!f || !f.type.startsWith("image/")) return;
-  const url=URL.createObjectURL(f);
+  shotFile=f;
   const el=$("#shot");
-  el.src=url; el.hidden=false;
-  img=new Image();
-  img.onload=()=>{ $("#runOcr").hidden=false; setStatus("준비 완료 — ‘글자 인식 시작’을 눌러주세요."); };
-  img.src=url;
+  if(el.src.startsWith("blob:")) URL.revokeObjectURL(el.src);
+  el.src=URL.createObjectURL(f); el.hidden=false;
+  $("#runOcr").hidden=false;
+  setStatus("준비 완료 — ‘아이템 인식하기’를 눌러주세요.");
   $("#ocrText").hidden=true; $("#rematch").hidden=true;
   $("#ocrResults").textContent=""; $("#prog").hidden=true;
 }
@@ -431,62 +420,84 @@ $("#file").addEventListener("change",e=>handleFile(e.target.files[0]));
 ["dragover","dragenter"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("on");}));
 ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("on");}));
 drop.addEventListener("drop",e=>handleFile(e.dataTransfer.files[0]));
+window.addEventListener("paste",e=>{
+  const items=[...((e.clipboardData&&e.clipboardData.items)||[])];
+  const hit=items.find(i=>i.type && i.type.startsWith("image/"));
+  if(!hit) return;
+  e.preventDefault();
+  showTab("ocr");
+  handleFile(hit.getAsFile());
+});
 
-function preprocess(image){
-  const targetW=Math.min(1600,Math.max(1000,image.naturalWidth));
-  const scale=targetW/image.naturalWidth;
-  const c=document.createElement("canvas");
-  c.width=Math.round(image.naturalWidth*scale);
-  c.height=Math.round(image.naturalHeight*scale);
-  const x=c.getContext("2d",{willReadFrequently:true});
-  x.imageSmoothingQuality="high";
-  x.drawImage(image,0,0,c.width,c.height);
-  const d=x.getImageData(0,0,c.width,c.height), px=d.data;
-  const hist=new Uint32Array(256); let sum=0;
-  for(let i=0;i<px.length;i+=4){
-    const y=(px[i]*299+px[i+1]*587+px[i+2]*114)/1000|0;
-    px[i]=px[i+1]=px[i+2]=y; hist[y]++; sum+=y;
-  }
-  const n=px.length/4, mean=sum/n;
-  let acc=0, lo=0, hi=255;
-  for(let v=0;v<256;v++){ acc+=hist[v]; if(acc>=n*.02){lo=v;break;} }
-  acc=0;
-  for(let v=255;v>=0;v--){ acc+=hist[v]; if(acc>=n*.02){hi=v;break;} }
-  const range=Math.max(1,hi-lo), invert=mean<120;
-  for(let i=0;i<px.length;i+=4){
-    let y=Math.max(0,Math.min(255,((px[i]-lo)/range)*255));
-    if(invert) y=255-y;
-    px[i]=px[i+1]=px[i+2]=y;
-  }
-  x.putImageData(d,0,0);
-  return c;
+/* 긴 변 1280px · JPEG로 줄여 전송량을 아낍니다 */
+function shrink(file){
+  return new Promise((res,rej)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const scale=Math.min(1,1280/Math.max(img.naturalWidth,img.naturalHeight));
+      const c=document.createElement("canvas");
+      c.width=Math.max(1,Math.round(img.naturalWidth*scale));
+      c.height=Math.max(1,Math.round(img.naturalHeight*scale));
+      const x=c.getContext("2d");
+      x.imageSmoothingQuality="high";
+      x.drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(url);
+      res(c.toDataURL("image/jpeg",.9));
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("이미지를 읽지 못했습니다.")); };
+    img.src=url;
+  });
 }
 
 $("#runOcr").addEventListener("click",async()=>{
-  if(!img) return;
-  $("#runOcr").disabled=true;
+  if(!shotFile) return;
+  const btn=$("#runOcr");
+  btn.disabled=true;
   try{
-    setStatus("인식 엔진을 불러오는 중… (처음 한 번은 시간이 조금 걸립니다)");
-    setProg(.03);
-    await loadTesseract();
-    const canvas=preprocess(img);
-    setStatus("글자를 읽는 중…");
-    const {data}=await Tesseract.recognize(canvas,"kor+eng",{
-      logger:m=>{ if(m.status==="recognizing text") setProg(.15+m.progress*.85); }
+    setStatus("이미지를 준비하는 중…"); setProg(.15);
+    const dataUrl=await shrink(shotFile);
+    const b64=dataUrl.slice(dataUrl.indexOf(",")+1);
+    setStatus("아이템을 알아보는 중…"); setProg(.5);
+    const r=await fetch(workerBase()+"/ai/identify",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({mime:"image/jpeg",data:b64})
     });
+    const out=await r.json().catch(()=>null);
     setProg(1);
-    const text=(data.text||"").trim();
-    $("#ocrText").value=text;
+    if(!r.ok || !out || !out.ok){
+      $("#ocrResults").textContent="";
+      setStatus((out&&out.message) || "인식에 실패했어요. 잠시 후 다시 시도하거나 이름 검색 탭을 이용해 주세요.");
+      return;
+    }
+    $("#ocrText").value=(out.text||"").trim();
     $("#ocrText").hidden=false; $("#rematch").hidden=false;
-    matchFromText(text);
+    matchFromAI(out.names||[], out.text||"");
   }catch(err){
     console.error(err);
     setStatus("인식에 실패했어요. 네트워크를 확인하거나, 이름 검색 탭을 이용해 주세요.");
   }finally{
-    $("#runOcr").disabled=false;
+    btn.disabled=false;
   }
 });
 $("#rematch").addEventListener("click",()=>matchFromText($("#ocrText").value));
+
+/* Gemini가 알려준 영문명을 DB와 대조하고, 못 찾으면 인식된 글자로 보완 */
+function matchFromAI(names,text){
+  const agg=new Map();
+  for(const n of names){
+    const conf=Math.max(.4,Math.min(1,n.confidence||.5));
+    for(const [s,it] of search(n.en,{min:.5,limit:3})){
+      const v=Math.min(1.05,s*.6+conf*.45);
+      if(v>(agg.get(it)||0)) agg.set(it,v);
+    }
+  }
+  if(agg.size===0){ matchFromText(text); return; }
+  const list=[...agg.entries()].map(([it,s])=>[s,it])
+    .sort((a,b)=>b[0]-a[0]).slice(0,8);
+  renderInto($("#ocrResults"),list,true,"");
+  setStatus(list.length>1 ? "가장 비슷한 아이템이에요. 맞는 것을 선택해 주세요." : "이 아이템으로 보여요.");
+}
 
 function matchFromText(text){
   const lines=text.split(/\n+/).map(s=>s.trim())
