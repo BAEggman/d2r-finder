@@ -739,6 +739,16 @@ function priceGroups(l){
   }
   return l.make_offer ? ["가격 제안 받는 중"] : [];
 }
+/* "+{{value}} to Mana" + 56 → "+56 to Mana" */
+function chipText(p){
+  const v = p.type==="string" ? p.string
+          : p.type==="number" ? p.number
+          : p.type==="bool"   ? (p.bool?"":null) : null;
+  if(v===null && p.type==="bool") return null;
+  const t=String(p.property||"");
+  if(/\{\{\s*value\s*\}\}/i.test(t)) return t.replace(/\{\{\s*value\s*\}\}/gi, v==null?"":String(v)).replace(/\s+/g," ").trim();
+  return t + (v===""||v==null ? "" : ": "+v);
+}
 function listingRow(l,sc){
   const d=document.createElement("div");
   d.className="lst";
@@ -779,11 +789,11 @@ function listingRow(l,sc){
       props=[...props].sort((a,b)=>(sc.hits.has(statKey(b.property))?1:0)-(sc.hits.has(statKey(a.property))?1:0));
     }
     for(const p of props.slice(0,8)){
-      let v = p.type==="string"?p.string : p.type==="number"?p.number : p.type==="bool"?(p.bool?"":null):null;
-      if(v===null && p.type==="bool") continue;
+      const txt=chipText(p);
+      if(txt===null) continue;
       const c=document.createElement("span"); c.className="chip";
       if(sc&&sc.hits.has(statKey(p.property))) c.classList.add("hit");
-      c.textContent = p.property + (v===""||v==null ? "" : ": "+v);
+      c.textContent=txt;
       pr.appendChild(c);
     }
     if(pr.children.length) d.appendChild(pr);
