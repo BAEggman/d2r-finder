@@ -154,6 +154,21 @@ const PROMPT = [
   "You are looking at a screenshot from the game Diablo II: Resurrected.",
   "The game client may be in Korean or English.",
   "",
+  "STEP 0 — TRANSCRIBE THE NAME. This is the most important field.",
+  "Copy the item's name line into `nameRaw` and the line under it into `baseRaw`,",
+  "EXACTLY as printed, character for character, in the original language.",
+  "Do NOT translate, correct, normalise or 'fix' these two fields.",
+  "The app looks the name up in its own dictionary, so a faithful transcription is",
+  "worth far more than your guess about which item it is.",
+  "",
+  "The game receives expansions with items you have never seen. If a Korean name",
+  "is unfamiliar, that almost certainly means it is a NEW item — not a misspelling",
+  "of one you know. NEVER substitute a similar-sounding item you do know.",
+  "  기드의 내기 is NOT 기드의 행운 (Gheed's Fortune).",
+  "  감시자의 빛 is NOT 무지개 자락 (Rainbow Facet).",
+  "When you do not recognise the name, still fill `nameRaw` faithfully, put your",
+  "best literal translation in `names` and set confidence at or below 0.3.",
+  "",
   "STEP 1 — Determine the item's rarity from the colour of its NAME text:",
   "  gold//dark-yellow  = unique      (e.g. Harlequin Crest)",
   "  green              = set",
@@ -221,6 +236,8 @@ const PROMPT = [
 const SCHEMA = {
   type: "OBJECT",
   properties: {
+    nameRaw: { type: "STRING", description: "Item name line, transcribed verbatim" },
+    baseRaw: { type: "STRING", description: "Line under the name, verbatim, or empty" },
     rarity: {
       type: "STRING",
       enum: ["unique", "set", "runeword", "rune", "rare", "magic", "crafted", "normal"],
@@ -250,7 +267,7 @@ const SCHEMA = {
     },
     text: { type: "STRING", description: "All readable text in the image" },
   },
-  required: ["rarity", "base", "names", "stats", "text"],
+  required: ["nameRaw", "baseRaw", "rarity", "base", "names", "stats", "text"],
 };
 
 async function identify(request, env) {
@@ -355,6 +372,8 @@ async function identify(request, env) {
       return json({
         ok: true,
         model,
+        nameRaw: typeof parsed.nameRaw === "string" ? parsed.nameRaw.trim() : "",
+        baseRaw: typeof parsed.baseRaw === "string" ? parsed.baseRaw.trim() : "",
         rarity,
         base,
         names: names.map(n => ({ en: n.en.trim(), confidence: Number(n.confidence) || 0 })),

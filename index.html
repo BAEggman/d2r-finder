@@ -514,7 +514,7 @@ $("#runOcr").addEventListener("click",async()=>{
     $("#ocrText").value=(out.text||"").trim();
     $("#ocrText").hidden=false; $("#rematch").hidden=false;
     setMyStats(out.stats||[]);
-    await matchFromAI(out.names||[], out.text||"", out.rarity||"");
+    await matchFromAI(out.names||[], out.text||"", out.rarity||"", out.nameRaw||"");
   }catch(err){
     console.error(err);
     setStatus("인식에 실패했어요. 네트워크를 확인하거나, 이름 검색 탭을 이용해 주세요.");
@@ -543,34 +543,53 @@ async function traderieLookup(en){
 
 /* Gemini가 알려준 영문명을 DB와 대조하고, 못 찾으면 인식된 글자로 보완 */
 const RARITY_KO={rare:"레어(노란 이름)",magic:"매직(파란 이름)",crafted:"크래프트",normal:"일반"};
-async function matchFromAI(names,text,rarity){
+async function matchFromAI(names,text,rarity,nameRaw){
   const agg=new Map();
-  for(const n of names){
-    const conf=Math.max(.4,Math.min(1,n.confidence||.5));
-    for(const [s,it] of search(n.en,{min:.5,limit:3})){
-      const v=Math.min(1.05,s*.6+conf*.45);
+
+  /* ① 화면에 찍힌 이름 그대로 사전을 먼저 뒤집니다.
+     Gemini는 확장팩 신규 아이템을 모르고 비슷한 옛 아이템으로 바꿔치기하므로
+     (기드의 내기 → Gheed's Fortune), 사전이 아는 이름이면 그쪽이 항상 우선입니다. */
+  let rawHit=0;
+  if(nameRaw){
+    for(const [s,it] of search(nameRaw,{min:.62,limit:4})){
+      const v=Math.min(1.06,s+.12);       /* 원문 일치에 가산점 */
       if(v>(agg.get(it)||0)) agg.set(it,v);
+      if(s>rawHit) rawHit=s;
     }
   }
-  /* 사전이 확신하지 못하면 트레더리 라이브 조회로 한 번 더 */
+
+  /* ② 사전이 원문으로 못 찾았을 때만 Gemini의 영문 추측을 씁니다 */
+  if(rawHit<.9){
+    for(const n of names){
+      const conf=Math.max(.4,Math.min(1,n.confidence||.5));
+      for(const [s,it] of search(n.en,{min:.5,limit:3})){
+        const v=Math.min(1.0,s*.6+conf*.4);
+        if(v>(agg.get(it)||0)) agg.set(it,v);
+      }
+    }
+  }
+
+  /* ③ 그래도 확신이 없으면 트레더리 라이브 조회 */
   const best=Math.max(0,...agg.values());
-  if(names.length && best<.9){
+  if(best<.9){
     setStatus("사전에 없는 이름이라 트레더리에 직접 물어보는 중…");
-    const live=await traderieLookup(names[0].en);
-    if(live && !agg.has(live)){
-      const dup=[...agg.keys()].some(it=>norm(it.e)===norm(live.e));
-      if(!dup) agg.set(live,1.02);
+    for(const q of [nameRaw, names.length?names[0].en:null]){
+      if(!q) continue;
+      const live=await traderieLookup(q);
+      if(live && ![...agg.keys()].some(it=>norm(it.e)===norm(live.e))){ agg.set(live,1.02); break; }
     }
   }
   if(agg.size===0){ matchFromText(text); return; }
   const list=[...agg.entries()].map(([it,s])=>[s,it])
     .sort((a,b)=>b[0]-a[0]).slice(0,8);
   renderInto($("#ocrResults"),list,true,"");
+  const top=list[0]&&list[0][1];
   if(list.some(([,it])=>it._live)){
     setStatus("사전에 없는 신규 아이템이라 트레더리에서 직접 찾았습니다.");
   }else
-  /* 레어·매직·크래프트는 고유 이름이 없어서 베이스 아이템으로 연결됩니다 */
-  if(RARITY_KO[rarity]){
+  /* 레어·매직·크래프트는 고유 이름이 없어서 베이스 아이템으로 연결됩니다.
+     사전이 유니크/세트/룬어로 확정했다면 이 안내는 띄우지 않습니다. */
+  if(RARITY_KO[rarity] && top && top.t==="b"){
     setStatus(RARITY_KO[rarity]+" 아이템이라 고유 이름이 없어요. 베이스 아이템 매물 페이지로 연결해 드립니다 — 옵션이 비슷한 매물은 직접 골라보세요.");
   }else{
     setStatus(list.length>1 ? "가장 비슷한 아이템이에요. 맞는 것을 선택해 주세요." : "이 아이템으로 보여요.");
