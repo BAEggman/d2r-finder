@@ -182,6 +182,10 @@ h1{
 }
 .opt-foot{display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:11px; padding-top:9px; border-top:1px solid var(--line)}
 .opt-tog{display:flex; align-items:center; gap:7px; color:var(--dim); font-size:12.5px; cursor:pointer}
+.wtag{
+  flex:none; font-size:10px; letter-spacing:.04em; color:var(--gold-deep);
+  border:1px solid var(--line-2); border-radius:99px; padding:1px 7px;
+}
 .pr-foot{display:flex; justify-content:center; margin-top:12px}
 .spin{display:inline-block; width:12px; height:12px; border:2px solid var(--line-2); border-top-color:var(--gold); border-radius:50%; animation:spin .8s linear infinite; vertical-align:-2px; margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -683,20 +687,39 @@ function lookupStat(map,key){
 }
 const activeStats=()=>MY.stats.filter(s=>s.on&&isFinite(s.value));
 
+/* 옵션마다 값어치가 다릅니다. +2 악마술사 기술과 마나 재생 10%를 동점으로 두면
+   스킬이 없는 아이템이 잡옵만 맞추고 1위로 올라옵니다. */
+function statWeight(stat){
+  const k=statKey(stat);
+  if(/skilllevels|allskills/.test(k)) return 5;          /* 스킬 — 값을 좌우하는 핵심 */
+  if(/fastercastrate|increasedattackspeed|fasterhitrecovery|fasterblockrate/.test(k)) return 3;
+  if(/bettercha|magicfind/.test(k)) return 2;
+  if(/resist/.test(k)) return 1.8;
+  if(/stolenperhit|deadlystrike|criticalstrike|crushingblow/.test(k)) return 1.6;
+  if(/^life$|^mana$|^defense$|maximumdamage|minimumdamage/.test(k)) return 1.5;
+  if(/strength|dexterity|vitality|energy/.test(k)) return 1.2;
+  if(/regenerate|damagereduced|lightradius|afterkill|attackerstakes/.test(k)) return .8;
+  return 1.5;
+}
+const WEIGHT_LABEL=w=> w>=5?"핵심" : w>=3?"중요" : "";
+
 function scoreListing(l){
   const act=activeStats();
   if(!act.length) return null;
   const map=listingStats(l);
   const hits=new Set();
-  let sum=0, have=0;
+  let sum=0, total=0, have=0;
   for(const s of act){
+    const wt=statWeight(s.stat);
+    total+=wt;
     const f=lookupStat(map,statKey(s.stat));
-    if(!f){ continue; }
+    if(!f) continue;                    /* 없는 옵션은 0점 — 가중치가 클수록 크게 손해 */
     have++; hits.add(f.k);
     const v=Math.abs(Number(s.value)), w=Math.abs(f.v);
-    sum += (v>0&&w>0) ? Math.min(v,w)/Math.max(v,w) : (v===0&&w===0?1:0);
+    const m=(v>0&&w>0) ? Math.min(v,w)/Math.max(v,w) : (v===0&&w===0?1:0);
+    sum+=wt*m;
   }
-  return {score:sum/act.length, have, need:act.length, hits};
+  return {score: total? sum/total : 0, have, need:act.length, hits};
 }
 
 function setMyStats(stats){
@@ -716,6 +739,12 @@ function buildOptPanel(){
     cb.addEventListener("change",()=>{ s.on=cb.checked; renderList(); });
     const nm=document.createElement("span"); nm.className="nm"; nm.textContent=s.stat;
     lab.appendChild(cb); lab.appendChild(nm);
+    const tag=WEIGHT_LABEL(statWeight(s.stat));
+    if(tag){
+      const w=document.createElement("span"); w.className="wtag"; w.textContent=tag;
+      w.title="이 옵션은 유사도에서 더 큰 비중을 차지합니다";
+      lab.appendChild(w);
+    }
     const num=document.createElement("input");
     num.type="number"; num.step="any"; num.value=s.value;
     num.addEventListener("input",()=>{ s.value=parseFloat(num.value); renderList(); });
